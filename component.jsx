@@ -21,6 +21,7 @@ const SistemaGestaoClientes = () => {
   const [editingClient, setEditingClient] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sortByDate, setSortByDate] = useState('asc'); // 'asc' = mais próximo primeiro, 'desc' = mais distante primeiro
+  const [showOnlyCloseToExpire, setShowOnlyCloseToExpire] = useState(false);
 
   const [clientForm, setClientForm] = useState({
     nome: '',
@@ -48,6 +49,17 @@ const SistemaGestaoClientes = () => {
       style: 'currency',
       currency: 'BRL'
     }).format(value);
+  };
+
+  const getServerColor = (servidor) => {
+    const colors = {
+      'P2X': '#836FFF',           // SlateBlue1
+      'P2_SERVER': '#00FFFF',     // Aqua / Cyan
+      'CPLAYER': '#87CEEB',       // SkyBlue
+      'RTV': '#98FB98',           // PaleGreen
+      'RTV-VODs': '#DAA520'       // Goldenrod
+    };
+    return colors[servidor] || '#3B82F6'; // Azul padrão se não encontrar
   };
 
   const formatDate = (date) => {
@@ -239,12 +251,24 @@ const SistemaGestaoClientes = () => {
   };
 
   const addMonths = async (cliente, months) => {
-    // Criar data local sem conversão de timezone
+    // Verificar se o cliente está vencido
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const currentExpiry = new Date(cliente.data_vencimento + 'T00:00:00');
-    const newExpiry = new Date(currentExpiry);
-    newExpiry.setMonth(newExpiry.getMonth() + months);
+    
+    let newExpiry;
+    
+    if (currentExpiry < today) {
+      // Cliente VENCIDO: calcular a partir de HOJE + meses
+      newExpiry = new Date(today);
+      newExpiry.setMonth(newExpiry.getMonth() + months);
+    } else {
+      // Cliente ATIVO: calcular a partir da data de vencimento atual + meses
+      newExpiry = new Date(currentExpiry);
+      newExpiry.setMonth(newExpiry.getMonth() + months);
+    }
 
-    // Atualizar cliente - garantir formato YYYY-MM-DD
+    // Garantir formato YYYY-MM-DD
     const formattedDate = newExpiry.toISOString().split('T')[0];
     const { error: clientError } = await supabase
       .from('gerenciador_clientes')
@@ -335,7 +359,14 @@ const SistemaGestaoClientes = () => {
     const matchesStatus = statusFilter === 'Todos' || cliente.status === statusFilter;
     const matchesServidor = servidorFilter === 'Todos' || cliente.servidor === servidorFilter;
     
-    return matchesSearch && matchesStatus && matchesServidor;
+    // Filtro para clientes próximos do vencimento (3, 4 ou 5 dias)
+    let matchesCloseToExpire = true;
+    if (showOnlyCloseToExpire) {
+      const diasRestantes = calculateDaysUntilExpiry(cliente.data_vencimento);
+      matchesCloseToExpire = diasRestantes === 3 || diasRestantes === 4 || diasRestantes === 5;
+    }
+    
+    return matchesSearch && matchesStatus && matchesServidor && matchesCloseToExpire;
   }).sort((a, b) => {
     // Primeira prioridade: Status (Ativos primeiro, Vencidos no final)
     if (a.status === 'Ativo' && b.status === 'Vencido') return -1;
@@ -497,9 +528,24 @@ const SistemaGestaoClientes = () => {
                         ))}
                       </select>
                     </div>
-
-
                   </div>
+
+                  {/* Filtro para clientes próximos do vencimento */}
+                  <div className="flex items-center">
+                    <label className="flex items-center space-x-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showOnlyCloseToExpire}
+                        onChange={(e) => setShowOnlyCloseToExpire(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 focus:ring-2"
+                      />
+                      <span className="text-sm sm:text-base text-white">
+                        Mostrar apenas clientes próximos do vencimento (3, 4, 5 dias)
+                      </span>
+                    </label>
+                  </div>
+
+                </div>
 
                   {/* Resumo dos Clientes */}
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 p-3 sm:p-4 bg-gray-800 rounded-lg">
@@ -532,7 +578,6 @@ const SistemaGestaoClientes = () => {
                       <div className="text-xs opacity-75">Percentual ativo</div>
                     </div>
                   </div>
-                </div>
 
                 {/* Clients Table */}
                 <div className="bg-gray-800 rounded-lg overflow-hidden">
@@ -585,7 +630,10 @@ const SistemaGestaoClientes = () => {
                               </td>
                               <td className="px-2 sm:px-4 py-2 sm:py-3 hidden sm:table-cell text-sm">{cliente.telefone}</td>
                               <td className="px-2 sm:px-4 py-2 sm:py-3">
-                                <span className="px-2 py-1 bg-blue-600 rounded text-xs">
+                                <span 
+                                  className="px-2 py-1 rounded text-xs font-medium text-black"
+                                  style={{ backgroundColor: getServerColor(cliente.servidor) }}
+                                >
                                   {cliente.servidor}
                                 </span>
                               </td>
