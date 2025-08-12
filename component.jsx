@@ -194,28 +194,54 @@ const SistemaGestaoClientes = () => {
     }
 
     const clientData = {
-      ...clientForm,
+      nome: clientForm.nome,
       telefone: formatPhone(clientForm.telefone),
-      plano_mensal: parseFloat(clientForm.plano_mensal),
-      plano_trimestral: parseFloat(clientForm.plano_trimestral),
+      servidor: clientForm.servidor,
+      plano_mensal: parseFloat(clientForm.plano_mensal) || 0,
+      plano_trimestral: parseFloat(clientForm.plano_trimestral) || 0,
+      data_vencimento: clientForm.data_vencimento,
+      observacoes: clientForm.observacoes || '',
       status: getStatus(clientForm.data_vencimento)
     };
 
     let result;
     if (editingClient) {
+      // Para edição, incluir o ID
+      const updateData = {
+        ...clientData,
+        id: editingClient.id
+      };
+      
       result = await supabase
         .from('gerenciador_clientes')
-        .update(clientData)
+        .update(updateData)
         .eq('id', editingClient.id);
     } else {
+      // Para criação, gerar um ID único
+      const maxIdResult = await supabase
+        .from('gerenciador_clientes')
+        .select('id')
+        .order('id', { ascending: false })
+        .limit(1);
+      
+      let newId = 1;
+      if (maxIdResult.data && maxIdResult.data.length > 0) {
+        newId = maxIdResult.data[0].id + 1;
+      }
+      
+      const insertData = {
+        ...clientData,
+        id: newId
+      };
+      
       result = await supabase
         .from('gerenciador_clientes')
-        .insert([clientData]);
+        .insert([insertData]);
     }
 
     if (result.error) {
       console.error('Erro ao salvar cliente:', result.error);
-      alert('Erro ao salvar cliente');
+      alert('Erro ao salvar cliente: ' + result.error.message);
     } else {
       alert(`Cliente ${editingClient ? 'atualizado' : 'criado'} com sucesso!`);
       setShowClientForm(false);
